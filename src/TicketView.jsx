@@ -1,158 +1,76 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { API_BASE_URL } from './apiConfig';
 
-// Mock tickets database
-const mockTickets = [
-  {
-    id: 101,
-    title: 'Login Issue',
-    description: 'Cannot log into my account with correct password.',
-    status: 'Open',
-    priority: 'High',
-    ownerEmail: 'client@example.com',
-  },
-  {
-    id: 102,
-    title: 'Email Sync Failure',
-    description: 'My emails are not syncing properly on mobile.',
-    status: 'Pending',
-    priority: 'Medium',
-    ownerEmail: 'client@example.com',
-  },
-];
-
-// Possible statuses and priorities
-const STATUS_OPTIONS = ['Open', 'Pending', 'Resolved', 'Closed'];
-const PRIORITY_OPTIONS = ['Low', 'Medium', 'High'];
-
-export default function TicketView({ ticketId, user }) {
+export default function TicketView({ ticketId, user, goToDashboard }) {
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [editStatus, setEditStatus] = useState('');
-  const [editPriority, setEditPriority] = useState('');
-  const [saveMsg, setSaveMsg] = useState('');
+  const [status, setStatus] = useState('');
+  const token = localStorage.getItem('token');
 
   useEffect(() => {
-    // Simulate fetching ticket by ID
-    const found = mockTickets.find(t => t.id === Number(ticketId));
-    if (!found) {
-      setError('Ticket not found.');
-      setLoading(false);
-      return;
+    async function fetchTicket() {
+      try {
+        const res = await fetch(`/tickets/${ticketId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error('Ticket not found or access denied');
+        const data = await res.json();
+        setTicket(data);
+        setStatus(data.status);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
     }
-    setTicket(found);
-    setEditStatus(found.status);
-    setEditPriority(found.priority);
-    setLoading(false);
-  }, [ticketId]);
+    fetchTicket();
+  }, [ticketId, token]);
+
+  const handleStatusChange = async (e) => {
+    const newStatus = e.target.value;
+    setStatus(newStatus);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) throw new Error('Failed to update status');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   if (loading) return <p>Loading ticket...</p>;
   if (error) return <p style={{ color: 'red' }}>{error}</p>;
-  if (!ticket) return null; // should not happen but safety
+  if (!ticket) return <p>Ticket not found.</p>;
 
-  const isAdmin = user?.role === 'admin';
-  const isOwner = user?.email === ticket.ownerEmail;
-
-  // Only admins can edit status and priority
-  const canEdit = isAdmin;
-
-  const handleSave = () => {
-    setSaveMsg('');
-    setError('');
-    // Simulate API call to save updates
-    setTimeout(() => {
-      setTicket(prev => ({
-        ...prev,
-        status: editStatus,
-        priority: editPriority,
-      }));
-      setSaveMsg('Ticket updated successfully!');
-    }, 700);
-  };
+  const canEdit = user.role === 'admin' || user.username === ticket.user?.username;
 
   return (
-    <div style={styles.container}>
-      <h1>Ticket #{ticket.id}</h1>
-      <h2>{ticket.title}</h2>
-      <p><strong>Description:</strong> {ticket.description}</p>
-      <p><strong>Submitted by:</strong> {ticket.ownerEmail}</p>
-
-      <div style={styles.field}>
-        <strong>Status:</strong>{' '}
+    <div>
+      <h2>Ticket: {ticket.title}</h2>
+      <p>Description: {ticket.description}</p>
+      <p>Priority: {ticket.priority}</p>
+      <p>
+        Status:{' '}
         {canEdit ? (
-          <select
-            value={editStatus}
-            onChange={e => setEditStatus(e.target.value)}
-            style={styles.select}
-          >
-            {STATUS_OPTIONS.map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
+          <select value={status} onChange={handleStatusChange}>
+            <option value="open">Open</option>
+            <option value="in progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
           </select>
         ) : (
-          <span>{ticket.status}</span>
+          status
         )}
-      </div>
-
-      <div style={styles.field}>
-        <strong>Priority:</strong>{' '}
-        {canEdit ? (
-          <select
-            value={editPriority}
-            onChange={e => setEditPriority(e.target.value)}
-            style={styles.select}
-          >
-            {PRIORITY_OPTIONS.map(p => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-        ) : (
-          <span>{ticket.priority}</span>
-        )}
-      </div>
-
-      {canEdit && (
-        <>
-          <button onClick={handleSave} style={styles.saveButton}>
-            Save Changes
-          </button>
-          {saveMsg && <p style={{ color: 'green' }}>{saveMsg}</p>}
-        </>
-      )}
-
-      {!canEdit && !isOwner && (
-        <p style={{ fontStyle: 'italic', color: 'gray' }}>
-          You do not have permission to modify this ticket.
-        </p>
-      )}
+      </p>
+      <button onClick={goToDashboard}>Back to Dashboard</button>
     </div>
   );
 }
-
-const styles = {
-  container: {
-    maxWidth: '600px',
-    margin: '2rem auto',
-    padding: '1rem',
-    fontFamily: 'Arial, sans-serif',
-    border: '1px solid #ddd',
-    borderRadius: '8px',
-  },
-  field: {
-    marginTop: '1rem',
-  },
-  select: {
-    fontSize: '1rem',
-    padding: '0.3rem 0.5rem',
-  },
-  saveButton: {
-    marginTop: '1.5rem',
-    padding: '0.75rem 1.5rem',
-    backgroundColor: '#2563eb',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontWeight: 'bold',
-  },
-};
